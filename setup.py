@@ -5,19 +5,19 @@ from setuptools import setup, find_packages
 #
 entry_points = """
 [ginga.rv.plugins]
-myglobalplugin=plugins:myglobalplugin:setup_myglobalplugin
-mylocalplugin=plugins:mylocalplugin:setup_mylocalplugin
+myglobalplugin=plugins:setup_myglobalplugin
+mylocalplugin=plugins:setup_mylocalplugin
 """
 
 setup(
     name = 'MyGingaPlugins',
-    version = "1.0",
+    version = "0.1.dev",
     description = "Plugin examples for the Ginga reference viewer",
     author = "Tycho Brahe",
-    license = "BSD 3-clause license",
-    url = "http://tbrahe.github.com/mygingaplugins",
-    version = "0.1.dev",
-    install_requires = ["ginga>=2.6.2"],
+    license = "BSD",
+    # change this to your URL
+    url = "http://ejeschke.github.com/ginga-plugin-template",
+    install_requires = ["ginga>=2.6.1"],
     packages = find_packages(),
     include_package_data = True,
     package_data = {},
