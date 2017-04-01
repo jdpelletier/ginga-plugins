@@ -55,4 +55,10 @@ def setup_mylocalplugin():
                  workspace='dialogs')
     return spec
 
+def setup_CSU_initializer():
+    spec = Bunch(path=os.path.join(p_path, 'CSU_initializer.py'),
+                 module='CSU_initializer', klass='CSU_initializer',
+                 workspace='dialogs')
+    return spec
+
 # END

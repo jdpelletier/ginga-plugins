@@ -7,6 +7,7 @@ entry_points = """
 [ginga.rv.plugins]
 myglobalplugin=plugins:setup_myglobalplugin
 mylocalplugin=plugins:setup_mylocalplugin
+CSU_initializer=plugins:setup_CSU_initializer
 """
 
 setup(
