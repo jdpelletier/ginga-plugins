@@ -27,7 +27,18 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         """
         super(CSU_initializer, self).__init__(fv, fitsimage)
 
-        # your local state and initialization code goes here
+        # Load plugin preferences
+        prefs = self.fv.get_preferences()
+        self.settings = prefs.createCategory('plugin_CSU_initializer')
+        self.settings.setDefaults(bar_num=1,
+                                  move_to_open=False,
+                                  bar_dist=0.0,
+                                 )
+        self.settings.load(onError='silent')
+
+
+
+
 
     def build_gui(self, container):
         """
@@ -57,14 +68,14 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         ## -----------------------------------------------------
         ## Acquire or Load Image
         ## -----------------------------------------------------
-        tw_image = Widgets.TextArea(wrap=True, editable=False)
-        tw_image.set_font(self.msg_font)
-        self.tw_image = tw_image
+#         tw_image = Widgets.TextArea(wrap=True, editable=False)
+#         tw_image.set_font(self.msg_font)
+#         self.tw_image = tw_image
 
         # Frame for instructions and add the text widget with another
         # blank widget to stretch as needed to fill emp
-        fr1 = Widgets.Expander("Image the CSU Mask")
-        fr1.set_widget(tw_image)
+        fr1 = Widgets.Frame("Image the CSU Mask")
+#         fr1.set_widget(tw_image)
         vbox.add_widget(fr1, stretch=0)
 
         # A button box that is always visible at the top
@@ -88,12 +99,12 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         ## -----------------------------------------------------
         ## Analyze Image
         ## -----------------------------------------------------
-        tw_analyze = Widgets.TextArea(wrap=True, editable=False)
-        tw_analyze.set_font(self.msg_font)
-        self.tw_analyze = tw_analyze
+#         tw_analyze = Widgets.TextArea(wrap=True, editable=False)
+#         tw_analyze.set_font(self.msg_font)
+#         self.tw_analyze = tw_analyze
 
-        fr2 = Widgets.Expander("Analyze CSU Mask Image")
-        fr2.set_widget(tw_analyze)
+        fr2 = Widgets.Frame("Analyze CSU Mask Image")
+#         fr2.set_widget(tw_analyze)
         vbox.add_widget(fr2, stretch=0)
 
         btns2 = Widgets.HBox()
@@ -109,14 +120,47 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         ## -----------------------------------------------------
         ## Bar Control
         ## -----------------------------------------------------
-        tw_bar_control = Widgets.TextArea(wrap=True, editable=False)
-        tw_bar_control.set_font(self.msg_font)
-        self.tw_bar_control = tw_bar_control
+#         tw_bar_control = Widgets.TextArea(wrap=True, editable=False)
+#         tw_bar_control.set_font(self.msg_font)
+#         self.tw_bar_control = tw_bar_control
 
         # Frame for instructions and add the text widget with another
         # blank widget to stretch as needed to fill emp
-        fr1 = Widgets.Expander("CSU Bar Control")
-        fr1.set_widget(tw_bar_control)
+        fr1 = Widgets.Frame("CSU Bar Control")
+#         fr1.set_widget(tw_bar_control)
+
+        captions = [
+            ("CSU Bar: ", 'label', 'bar_num', 'llabel', 'set_bar_num', 'entry'),
+            ("Distance: ", 'label', 'bar_dist', 'llabel', 'set_bar_dist', 'entry'),
+            ("Initialize Bar", 'button', "Move to open", 'checkbutton'),
+            ("Move Bar", 'button'),
+            ]
+
+        w, b = Widgets.build_info(captions, orientation=orientation)
+        self.w.update(b)
+
+        bar_num = self.settings.get('bar_num', 1)
+        b.bar_num.set_text('{:2d}'.format(bar_num))
+        b.set_bar_num.set_text(str(bar_num))
+        b.set_bar_num.add_callback('activated', self.set_bar_num_cb)
+        b.set_bar_num.set_tooltip("Set bar number")
+
+        bar_dist = self.settings.get('bar_dist', 0.0)
+        b.bar_dist.set_text('{:.1f}'.format(bar_dist))
+        b.set_bar_dist.set_text(str(bar_dist))
+        b.set_bar_dist.add_callback('activated', self.set_bar_dist_cb)
+        b.set_bar_dist.set_tooltip("Set distance to move bar")
+
+        b.move_to_open.set_tooltip("Move bar to open position before initialization")
+        move_to_open = self.settings.get('move_to_open', False)
+        b.move_to_open.set_state(move_to_open)
+        b.move_to_open.add_callback('activated', self.move_to_open_cb)
+        b.initialize_bar.add_callback('activated', lambda w: self.initialize_bar_cb())
+
+        b.move_bar.add_callback('activated', lambda w: self.move_bar_cb())
+
+
+        fr1.set_widget(w)
         vbox.add_widget(fr1, stretch=0)
 
 
@@ -174,14 +218,14 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         opened and closed for modal operations.  This method may be omitted
         in many cases.
         """
-        self.tw_image.set_text(
-        'Acquire or load an image of the mask to be analyzed.')
+#         self.tw_image.set_text(
+#         'Acquire or load an image of the mask to be analyzed.')
 
-        self.tw_analyze.set_text(
-        'Click "Analyze Mask Image" to initiate the analysis.')
+#         self.tw_analyze.set_text(
+#         'Click "Analyze Mask Image" to initiate the analysis.')
 
-        self.tw_bar_control.set_text(
-        'Move or initialize a bar.')
+#         self.tw_bar_control.set_text(
+#         'Move or initialize a bar.')
 
         self.resume()
 
@@ -236,3 +280,25 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         name of the plugin.
         """
         return 'mylocalplugin'
+
+    def set_bar_num_cb(self, w):
+        bar_num = int(w.get_text())
+        self.settings.set(bar_num=bar_num)
+        self.w.bar_num.set_text(str(bar_num))
+        
+    def initialize_bar_cb(self):
+        if self.settings.get('move_to_open'):
+            pass
+        else:
+            pass
+
+    def move_to_open_cb(self, widget, tf):
+        self.settings.set(move_to_open_cb=tf)
+
+    def set_bar_dist_cb(self, w):
+        bar_dist = float(w.get_text())
+        self.settings.set(bar_dist=bar_dist)
+        self.w.bar_dist.set_text(str(bar_dist))
+
+    def move_bar_cb(self):
+        pass
