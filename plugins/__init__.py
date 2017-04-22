@@ -61,4 +61,10 @@ def setup_CSU_initializer():
                  workspace='dialogs')
     return spec
 
+def setup_MultiBars():
+    spec = Bunch(path=os.path.join(p_path, 'MultiBars.py'),
+                 module='MultiBars', klass='MultiBars',
+                 workspace='dialogs')
+    return spec
+
 # END
