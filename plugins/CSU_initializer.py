@@ -12,6 +12,12 @@ from ginga import GingaPlugin
 from ginga.gw import Widgets
 
 # import any other modules you want here--it's a python world!
+import numpy as np
+from ginga import GingaPlugin, RGBImage, colors
+from ginga.gw import Widgets
+from ginga.misc import ParamSet, Bunch
+from ginga.util import dp
+from ginga.gw.GwHelp import FileSelection
 
 class CSU_initializer(GingaPlugin.LocalPlugin):
 
@@ -36,7 +42,17 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
                                  )
         self.settings.load(onError='silent')
 
+        self.layertag = 'bars-canvas'
+        self.dc = fv.get_draw_classes()
+        canvas = self.dc.DrawingCanvas()
+        canvas.enable_draw(False)
+        canvas.set_surface(self.fitsimage)
+        self.canvas = canvas
 
+        self.colornames = colors.get_colors()
+        self.canvas_img = None
+        
+        self.mfilesel = FileSelection(self.fv.w.root.get_widget())
 
 
 
@@ -68,14 +84,7 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         ## -----------------------------------------------------
         ## Acquire or Load Image
         ## -----------------------------------------------------
-#         tw_image = Widgets.TextArea(wrap=True, editable=False)
-#         tw_image.set_font(self.msg_font)
-#         self.tw_image = tw_image
-
-        # Frame for instructions and add the text widget with another
-        # blank widget to stretch as needed to fill emp
         fr1 = Widgets.Frame("Image the CSU Mask")
-#         fr1.set_widget(tw_image)
         vbox.add_widget(fr1, stretch=0)
 
         # A button box that is always visible at the top
@@ -117,6 +126,32 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
 
         vbox.add_widget(btns2, stretch=0)
 
+
+        ## -----------------------------------------------------
+        ## Full Mask Initialization
+        ## -----------------------------------------------------
+#         fr3 = Widgets.Frame("Full Mask Initialization")
+# 
+#         captions = [
+#             ("Fast Init from Keywords", 'button'),
+#             ("Fast Init from Header", 'button'),
+#             ("Fast Init from Image Analysis", 'button'),
+#             ("Full Init", 'button'),
+#             ]
+# 
+#         w, b = Widgets.build_info(captions, orientation=orientation)
+#         self.w.update(b)
+# 
+#         b.fast_init_from_keywords.add_callback('activated', lambda w: self.fast_init_from_keywords_cb())
+#         b.fast_init_from_header.add_callback('activated', lambda w: self.fast_init_from_header_cb())
+#         b.fast_init_from_image_analysis.add_callback('activated', lambda w: self.fast_init_from_image_analysis_cb())
+#         b.full_init.add_callback('activated', lambda w: self.full_init_cb())
+# 
+# 
+#         fr3.set_widget(w)
+#         vbox.add_widget(fr3, stretch=0)
+
+
         ## -----------------------------------------------------
         ## Bar Control
         ## -----------------------------------------------------
@@ -126,7 +161,7 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
 
         # Frame for instructions and add the text widget with another
         # blank widget to stretch as needed to fill emp
-        fr1 = Widgets.Frame("CSU Bar Control")
+        fr4 = Widgets.Frame("CSU Bar Control")
 #         fr1.set_widget(tw_bar_control)
 
         captions = [
@@ -146,7 +181,7 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         b.set_bar_num.set_tooltip("Set bar number")
 
         bar_dist = self.settings.get('bar_dist', 0.0)
-        b.bar_dist.set_text('{:.1f}'.format(bar_dist))
+        b.bar_dist.set_text('{:+.1f}'.format(bar_dist))
         b.set_bar_dist.set_text(str(bar_dist))
         b.set_bar_dist.add_callback('activated', self.set_bar_dist_cb)
         b.set_bar_dist.set_tooltip("Set distance to move bar")
@@ -160,9 +195,27 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         b.move_bar.add_callback('activated', lambda w: self.move_bar_cb())
 
 
-        fr1.set_widget(w)
-        vbox.add_widget(fr1, stretch=0)
+        fr4.set_widget(w)
+        vbox.add_widget(fr4, stretch=0)
 
+
+        ## -----------------------------------------------------
+        ## Bar Overlay
+        ## -----------------------------------------------------
+        fr5 = Widgets.Frame("Bar Input")
+
+        captions = (('Overlay', 'button'),
+            ('Clear', 'button'))
+    
+        w, b = Widgets.build_info(captions, orientation=orientation)
+        self.w.update(b)
+
+        b.overlay.add_callback('activated',
+                   lambda w: self.overlaybars_from_file())
+
+        b.clear.add_callback('activated', lambda w: self.clear_canvas())
+        fr5.set_widget(w)
+        vbox.add_widget(fr5, stretch=0)
 
 
         ## -----------------------------------------------------
@@ -202,6 +255,7 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         #cw = container.get_widget()
         #cw.addWidget(widget, stretch=1)
 
+
     def close(self):
         """
         Example close method.  You can use this method and attach it as a
@@ -218,14 +272,20 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         opened and closed for modal operations.  This method may be omitted
         in many cases.
         """
-#         self.tw_image.set_text(
-#         'Acquire or load an image of the mask to be analyzed.')
-
 #         self.tw_analyze.set_text(
 #         'Click "Analyze Mask Image" to initiate the analysis.')
 
 #         self.tw_bar_control.set_text(
 #         'Move or initialize a bar.')
+
+        # start ruler drawing operation
+        p_canvas = self.fitsimage.get_canvas()
+        try:
+            obj = p_canvas.get_object_by_tag(self.layertag)
+
+        except KeyError:
+            # Add ruler layer
+            p_canvas.add(self.canvas, tag=self.layertag)
 
         self.resume()
 
@@ -281,11 +341,53 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         """
         return 'mylocalplugin'
 
+
+
+
+    def slit_to_bars(self, j):
+        return (j*2+1, j*2+2)
+
+    def slit_ypos(self, j):
+        start = 12
+        height = (2044.-8.)/46.
+        y1 = start + height*j + 0.11/0.1798
+        y2 = start + height*(j+1) - 0.11/0.1798
+        return(int(np.ceil(y1)), int(np.floor(y2)))
+
+    def read_csu_bar_state(self, filename):
+        with open(filename, 'r') as FO:
+            lines = FO.readlines()
+        bars = {}
+        for line in lines:
+            barno, pos, state = line.strip('\n').split(',')
+            bars[int(barno)] = float(pos)
+        return bars
+
+    def pix_to_mm(self, pix):
+        mm = 8.340 + 0.124 * pix
+        return mm
+
+    def mm_to_pix(self, mm):
+        pix = (mm - 8.340)/0.124
+        return pix
+
+    def fast_init_from_keywords_cb(self):
+        pass
+
+    def fast_init_from_header_cb(self):
+        pass
+
+    def fast_init_from_image_analysis_cb(self):
+        pass
+
+    def full_init_cb(self):
+        pass
+
     def set_bar_num_cb(self, w):
         bar_num = int(w.get_text())
         self.settings.set(bar_num=bar_num)
-        self.w.bar_num.set_text(str(bar_num))
-        
+        self.w.bar_num.set_text('{:2d}'.format(bar_num))
+
     def initialize_bar_cb(self):
         if self.settings.get('move_to_open'):
             pass
@@ -298,7 +400,36 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
     def set_bar_dist_cb(self, w):
         bar_dist = float(w.get_text())
         self.settings.set(bar_dist=bar_dist)
-        self.w.bar_dist.set_text(str(bar_dist))
+        self.w.bar_dist.set_text('{:+.1f}'.format(bar_dist))
 
     def move_bar_cb(self):
         pass
+
+    def load_cb(self):
+        self.mfilesel.popup('Load bar file', self.overlaybars,
+                            initialdir='.', filename='txt files (*.txt)')
+
+    def clear_canvas(self):
+        self.canvas.delete_all_objects()
+
+    def overlaybars(self, bars, color='green'):
+        for j in range(0, 46):
+            b1, b2 = self.slit_to_bars(j)
+            y1, y2 = self.slit_ypos(j)
+            x1 = self.mm_to_pix(bars[b1])
+            x2 = self.mm_to_pix(bars[b2])
+#             self.canvas.add(self.dc.Rectangle(0, y2, x1, y1))
+#             self.canvas.add(self.dc.Rectangle(2044, y2, x2, y1))
+            corners1 = [(0, y1), (0, y2), (x1-1.5, y2), (x1+1.5, y1)]
+            corners2 = [(2044, y1), (2044, y2), (x2-1.5, y2), (x2+1.5, y1)]
+            self.canvas.add(self.dc.Polygon(corners1, color=color))
+            self.canvas.add(self.dc.Polygon(corners2, color=color))
+
+    def overlaybars_from_file(self):
+        bars = self.read_csu_bar_state('/Users/jwalawender/MOSFIRE_Test_Data/20170414/csu_bar_state')
+        self.overlaybars(bars)
+
+    def overlaybars_from_header(self):
+        bars = {}
+        self.overlaybars(bars)
+
