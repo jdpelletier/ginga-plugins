@@ -58,8 +58,9 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         ## Define dimensions and angles relative to the pixels of the image
         self.bar_angle = -0.22 * np.pi/180.
         self.slit_angle = (4.0-0.22) * np.pi/180.
-        self.bar_width = 4.42 # mm (in same coordinate system as bar positions)
-        self.bar01ycenter = 0. # mm
+        self.bar_width = 5.46 # mm (in same coordinate system as bar positions)
+        self.bar01xcenter = -7.0 # mm
+        self.bar01ycenter = -1.0 # mm
     def build_gui(self, container):
         """
         This method is called when the plugin is invoked.  It builds the
@@ -351,7 +352,7 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         return (slit*2-1, slit*2)
 
     def barpos_to_pix(self, slit, mm):
-        barpos = np.array([mm, slit*self.bar_width + self.bar01ycenter])
+        barpos = np.array([mm + self.bar01xcenter, slit*self.bar_width + self.bar01ycenter])
         scale = 1./0.124
         rot = np.array([ [scale*np.cos(self.bar_angle), -np.sin(self.bar_angle)],
                          [np.sin(self.bar_angle), scale*np.cos(self.bar_angle)] ])
@@ -373,10 +374,6 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         pix = (mm - 8.340)/0.124
         return pix
 
-
-
-
-
     def read_csu_bar_state(self, filename):
         with open(filename, 'r') as FO:
             lines = FO.readlines()
@@ -396,6 +393,50 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
             bars[2*slit-1] = pos - 0.5*width
             bars[2*slit] = pos + 0.5*width
         return bars
+
+    def overlaybars(self, bars, color='green'):
+        draw_height = 0.45
+        for j in range(1, 47):
+            b1, b2 = self.slit_to_bars(j)
+            
+            corners1 = [ self.barpos_to_pix(j-draw_height, 0),
+                         self.barpos_to_pix(j+draw_height, 0),
+                         self.barpos_to_pix(j+draw_height, bars[b1]-draw_height*self.bar_width*np.sin(self.slit_angle)),
+                         self.barpos_to_pix(j-draw_height, bars[b1]+draw_height*self.bar_width*np.sin(self.slit_angle)) ]
+            corners2 = [ self.barpos_to_pix(j-draw_height, 270.4),
+                         self.barpos_to_pix(j+draw_height, 270.4),
+                         self.barpos_to_pix(j+draw_height, bars[b2]-draw_height*self.bar_width*np.sin(self.slit_angle)),
+                         self.barpos_to_pix(j-draw_height, bars[b2]+draw_height*self.bar_width*np.sin(self.slit_angle)) ]
+            self.canvas.add(self.dc.Polygon(corners1, color=color))
+            self.canvas.add(self.dc.Polygon(corners2, color=color))
+            x1, y1 = self.barpos_to_pix(j-0.2, 2.0)
+            self.canvas.add(self.dc.Text(x1, y1, '{:d}'.format(b1),
+                                         fontsize=10, color='white'))
+            x2, y2 = self.barpos_to_pix(j-0.2, 270.4-7.0)
+            self.canvas.add(self.dc.Text(x2, y2, '{:d}'.format(b2),
+                                         fontsize=10, color='white'))
+
+    def overlaybars_from_file(self):
+        bars = self.read_csu_bar_state('/Users/jwalawender/MOSFIRE_Test_Data/20170414/csu_bar_state')
+        print(bars)
+        print( self.barpos_to_pix(1, 0) )
+        print( self.barpos_to_pix(1, 72.) )
+        print( self.barpos_to_pix(1, 144.965) )
+        self.overlaybars(bars)
+
+    def overlaybars_from_header(self):
+        file = '/Users/jwalawender/MOSFIRE_Test_Data/20170414/m170224_0102.fits'
+        hdul = fits.open(file, 'readonly')
+        bars = self.read_bars_from_header(hdul[3])
+        print(bars)
+        self.overlaybars(bars)
+
+
+
+
+
+
+
 
 
     def set_bar_num_cb(self, w):
@@ -427,48 +468,4 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
     def clear_canvas(self):
         self.canvas.delete_all_objects()
 
-    def overlaybars(self, bars, color='green'):
-        for j in range(1, 47):
-            b1, b2 = self.slit_to_bars(j)
-#             y1, y2 = self.slit_ypos(j)
-#             x1 = self.mm_to_pix(bars[b1])
-#             x2 = self.mm_to_pix(bars[b2])
-#             corners1 = [(-10, y1), (-10, y2), (x1-1.5, y2), (x1+1.5, y1)]
-#             corners2 = [(2058, y1), (2058, y2), (x2-1.5, y2), (x2+1.5, y1)]
-#             x0, y0 = self.barpos_to_pix(j, 0)
-#             x1, y1 = self.barpos_to_pix(j, bars[b1])
-#             x2, y2 = self.barpos_to_pix(j, bars[b2])
-#             x3, y3 = self.barpos_to_pix(j, 270.4)
-#             corners1 = [(x0, y0-5), (x0, y0+5), (x1, y1+5), (x1, y1-5)]
-#             corners2 = [(x2, y2-5), (x2, y2+5), (x3, y3+5), (x3, y3-5)]
-
-            corners1 = [ self.barpos_to_pix(j-0.4, 0),
-                         self.barpos_to_pix(j+0.4, 0),
-                         self.barpos_to_pix(j+0.4, bars[b1]),
-                         self.barpos_to_pix(j-0.4, bars[b1]) ]
-            corners2 = [ self.barpos_to_pix(j-0.4, 270.4),
-                         self.barpos_to_pix(j+0.4, 270.4),
-                         self.barpos_to_pix(j+0.4, bars[b2]),
-                         self.barpos_to_pix(j-0.4, bars[b2]) ]
-
-            x1, y1 = self.barpos_to_pix(j, bars[b1]-2.0)
-            self.canvas.add(self.dc.Text(x1, y1, '{:d}'.format(j),
-                                         fontsize=10, color='white'))
-            self.canvas.add(self.dc.Polygon(corners1, color=color))
-            self.canvas.add(self.dc.Polygon(corners2, color=color))
-
-    def overlaybars_from_file(self):
-        bars = self.read_csu_bar_state('/Users/jwalawender/MOSFIRE_Test_Data/20170414/csu_bar_state')
-        print(bars)
-        print( self.barpos_to_pix(1, 0) )
-        print( self.barpos_to_pix(1, 72.) )
-        print( self.barpos_to_pix(1, 144.965) )
-        self.overlaybars(bars)
-
-    def overlaybars_from_header(self):
-        file = '/Users/jwalawender/MOSFIRE_Test_Data/20170414/m170224_0102.fits'
-        hdul = fits.open(file, 'readonly')
-        bars = self.read_bars_from_header(hdul[3])
-        print(bars)
-        self.overlaybars(bars)
 
