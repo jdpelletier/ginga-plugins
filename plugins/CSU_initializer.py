@@ -54,13 +54,13 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         self.canvas_img = None
         
         self.mfilesel = FileSelection(self.fv.w.root.get_widget())
-
+        
         ## Define dimensions and angles relative to the pixels of the image
         self.bar_angle = -0.22 * np.pi/180.
         self.slit_angle = (4.0-0.22) * np.pi/180.
-        self.bar_width = 5.46 # mm (in same coordinate system as bar positions)
-        self.bar01xcenter = -7.0 # mm
-        self.bar01ycenter = -1.0 # mm
+        self.bar_width = -5.48 # mm (in same coordinate system as bar positions)
+        self.bar01xcenter = 269.0 # mm
+        self.bar01ycenter = 255.0 # mm
         self.scale = 1./0.124
         self.barposmatrix = np.array([ [self.scale*np.cos(self.bar_angle),
                                         -np.sin(self.bar_angle)],
@@ -359,7 +359,7 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         return (slit*2-1, slit*2)
 
     def barpos_to_pix(self, slit, mm):
-        barpos = np.array([mm + self.bar01xcenter, slit*self.bar_width + self.bar01ycenter])
+        barpos = np.array([self.bar01xcenter - mm, slit*self.bar_width + self.bar01ycenter])
         xy = np.dot(barpos, self.barposmatrix)
         return xy
 
@@ -372,55 +372,55 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
             bars[int(barno)] = float(pos)
         return bars
 
-    def read_bars_from_header(self, hdu):
+    def read_bars_from_header(self, header):
         bars = {}
-        for line in hdu.data:
-            slit = int(line[0])
-            ctr = float(line[3])
-            width = float(line[4])
-            pos = ctr + 135.3
-            bars[2*slit-1] = pos - 0.5*width
-            bars[2*slit] = pos + 0.5*width
+        for i in range(1,93):
+            bars[i] = float(header['B{:02d}POS'.format(i)])
         return bars
 
     def overlaybars(self, bars, color='green'):
         draw_height = 0.45
         for j in range(1, 47):
             b1, b2 = self.slit_to_bars(j)
-            
-            corners1 = [ self.barpos_to_pix(j-draw_height, 0),
-                         self.barpos_to_pix(j+draw_height, 0),
-                         self.barpos_to_pix(j+draw_height, bars[b1]-draw_height*self.bar_width*np.sin(self.slit_angle)),
-                         self.barpos_to_pix(j-draw_height, bars[b1]+draw_height*self.bar_width*np.sin(self.slit_angle)) ]
-            corners2 = [ self.barpos_to_pix(j-draw_height, 270.4),
-                         self.barpos_to_pix(j+draw_height, 270.4),
-                         self.barpos_to_pix(j+draw_height, bars[b2]-draw_height*self.bar_width*np.sin(self.slit_angle)),
-                         self.barpos_to_pix(j-draw_height, bars[b2]+draw_height*self.bar_width*np.sin(self.slit_angle)) ]
+            corners1 = [ self.barpos_to_pix(j-draw_height, 8),
+                         self.barpos_to_pix(j+draw_height, 8),
+                         self.barpos_to_pix(j+draw_height,
+                              bars[b1] + draw_height*self.bar_width*np.sin(self.slit_angle)),
+                         self.barpos_to_pix(j-draw_height,
+                              bars[b1] - draw_height*self.bar_width*np.sin(self.slit_angle)) ]
+            corners2 = [ self.barpos_to_pix(j-draw_height, 270.4+2.0),
+                         self.barpos_to_pix(j+draw_height, 270.4+2.0),
+                         self.barpos_to_pix(j+draw_height,
+                              bars[b2] + draw_height*self.bar_width*np.sin(self.slit_angle)),
+                         self.barpos_to_pix(j-draw_height,
+                              bars[b2] - draw_height*self.bar_width*np.sin(self.slit_angle)) ]
             self.canvas.add(self.dc.Polygon(corners1, color=color))
             self.canvas.add(self.dc.Polygon(corners2, color=color))
-            x1, y1 = self.barpos_to_pix(j-0.2, 2.0)
+            x1, y1 = self.barpos_to_pix(j+0.3, 14.0)
             self.canvas.add(self.dc.Text(x1, y1, '{:d}'.format(b1),
                                          fontsize=10, color='white'))
-            x2, y2 = self.barpos_to_pix(j-0.2, 270.4-7.0)
+            x2, y2 = self.barpos_to_pix(j+0.3, 270.4-2.0)
             self.canvas.add(self.dc.Text(x2, y2, '{:d}'.format(b2),
                                          fontsize=10, color='white'))
+
+            if b1 == 1:
+                print(bars[b1], bars[b2])
+                print(b1, x1, y1)
+                print(b2, x2, y2)
+                print(corners1)
+
 
     def overlaybars_from_file(self):
         bars = self.read_csu_bar_state('/Users/jwalawender/MOSFIRE_Test_Data/20170414/csu_bar_state')
         self.overlaybars(bars)
 
     def overlaybars_from_header(self):
-        file = '/Users/jwalawender/MOSFIRE_Test_Data/20170414/m170224_0102.fits'
-        hdul = fits.open(file, 'readonly')
-        bars = self.read_bars_from_header(hdul[3])
+        ## Get header
+        channel = self.fv.get_channel(self.chname)
+        image = channel.get_current_image()
+        header = image.get_header()
+        bars = self.read_bars_from_header(header)
         self.overlaybars(bars)
-
-
-
-
-
-
-
 
 
     def set_bar_num_cb(self, w):
