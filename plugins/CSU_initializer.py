@@ -61,6 +61,13 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         self.bar_width = 5.46 # mm (in same coordinate system as bar positions)
         self.bar01xcenter = -7.0 # mm
         self.bar01ycenter = -1.0 # mm
+        self.scale = 1./0.124
+        self.barposmatrix = np.array([ [self.scale*np.cos(self.bar_angle),
+                                        -np.sin(self.bar_angle)],
+                                       [np.sin(self.bar_angle),
+                                        self.scale*np.cos(self.bar_angle)] ])
+
+
     def build_gui(self, container):
         """
         This method is called when the plugin is invoked.  It builds the
@@ -353,26 +360,8 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
 
     def barpos_to_pix(self, slit, mm):
         barpos = np.array([mm + self.bar01xcenter, slit*self.bar_width + self.bar01ycenter])
-        scale = 1./0.124
-        rot = np.array([ [scale*np.cos(self.bar_angle), -np.sin(self.bar_angle)],
-                         [np.sin(self.bar_angle), scale*np.cos(self.bar_angle)] ])
-        xy = np.dot(barpos, rot)
+        xy = np.dot(barpos, self.barposmatrix)
         return xy
-
-    def slit_ypos(self, j):
-        start = 12
-        height = (2044.-8.)/46.
-        y1 = start + height*j + 0.11/0.1798
-        y2 = start + height*(j+1) - 0.11/0.1798
-        return(int(np.ceil(y1)), int(np.floor(y2)))
-
-    def pix_to_mm(self, pix):
-        mm = 8.340 + 0.124 * pix
-        return mm
-
-    def mm_to_pix(self, mm):
-        pix = (mm - 8.340)/0.124
-        return pix
 
     def read_csu_bar_state(self, filename):
         with open(filename, 'r') as FO:
@@ -418,17 +407,12 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
 
     def overlaybars_from_file(self):
         bars = self.read_csu_bar_state('/Users/jwalawender/MOSFIRE_Test_Data/20170414/csu_bar_state')
-        print(bars)
-        print( self.barpos_to_pix(1, 0) )
-        print( self.barpos_to_pix(1, 72.) )
-        print( self.barpos_to_pix(1, 144.965) )
         self.overlaybars(bars)
 
     def overlaybars_from_header(self):
         file = '/Users/jwalawender/MOSFIRE_Test_Data/20170414/m170224_0102.fits'
         hdul = fits.open(file, 'readonly')
         bars = self.read_bars_from_header(hdul[3])
-        print(bars)
         self.overlaybars(bars)
 
 
