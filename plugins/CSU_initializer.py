@@ -367,10 +367,13 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         with open(filename, 'r') as FO:
             lines = FO.readlines()
         bars = {}
+        state = {}
+        state_trans = {2: 'OK', -3: 'ERROR'}
         for line in lines:
-            barno, pos, state = line.strip('\n').split(',')
+            barno, pos, statestr = line.strip('\n').split(',')
             bars[int(barno)] = float(pos)
-        return bars
+            state[int(barno)] = state_trans[int(statestr)]
+        return bars, state
 
     def read_bars_from_header(self, header):
         bars = {}
@@ -378,7 +381,8 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
             bars[i] = float(header['B{:02d}POS'.format(i)])
         return bars
 
-    def overlaybars(self, bars, color='green'):
+    def overlaybars(self, bars, state=None):
+        colormap = {'OK': 'green', 'ERROR': 'red'}
         draw_height = 0.45
         for j in range(1, 47):
             b1, b2 = self.slit_to_bars(j)
@@ -394,8 +398,18 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
                               bars[b2] + draw_height*self.bar_width*np.sin(self.slit_angle)),
                          self.barpos_to_pix(j-draw_height,
                               bars[b2] - draw_height*self.bar_width*np.sin(self.slit_angle)) ]
-            self.canvas.add(self.dc.Polygon(corners1, color=color))
-            self.canvas.add(self.dc.Polygon(corners2, color=color))
+
+            try:
+                b1color = colormap[state[b1]]
+            except:
+                b1color = 'blue'
+            try:
+                b2color = colormap[state[b2]]
+            except:
+                b2color = 'blue'
+
+            self.canvas.add(self.dc.Polygon(corners1, color=b1color))
+            self.canvas.add(self.dc.Polygon(corners2, color=b2color))
             x1, y1 = self.barpos_to_pix(j+0.3, 14.0)
             self.canvas.add(self.dc.Text(x1, y1, '{:d}'.format(b1),
                                          fontsize=10, color='white'))
@@ -403,16 +417,10 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
             self.canvas.add(self.dc.Text(x2, y2, '{:d}'.format(b2),
                                          fontsize=10, color='white'))
 
-            if b1 == 1:
-                print(bars[b1], bars[b2])
-                print(b1, x1, y1)
-                print(b2, x2, y2)
-                print(corners1)
-
-
     def overlaybars_from_file(self):
-        bars = self.read_csu_bar_state('/Users/jwalawender/MOSFIRE_Test_Data/20170414/csu_bar_state')
-        self.overlaybars(bars)
+        bars, state = self.read_csu_bar_state('/Users/jwalawender/MOSFIRE_Test_Data/20170414/csu_bar_state')
+        print(state)
+        self.overlaybars(bars, state=state)
 
     def overlaybars_from_header(self):
         ## Get header
