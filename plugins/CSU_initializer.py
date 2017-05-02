@@ -74,9 +74,10 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         elapsed = (tock-tick).total_seconds()
         print('  Fitted transforms in {:.3f} s'.format(elapsed))
 
-        ## Determine bar center to center distance in pixels
-        ## 02, 145.472
-        ## 92, 129.480
+        ## Determine slit angle and bar center to center distance in pixels
+        ## from the transformation and the known longslit positions
+        ##   in longslit, bar 02 is at 145.472
+        ##   in longslit, bar 92 is at 129.480
         physical = [ [145.472, self.bar_to_slit(2)],
                      [129.480, self.bar_to_slit(92)] ]
         pixels = self.physical_to_pixel(physical)
