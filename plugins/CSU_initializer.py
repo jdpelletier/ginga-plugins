@@ -12,6 +12,7 @@ from ginga import GingaPlugin
 from ginga.gw import Widgets
 
 # import any other modules you want here--it's a python world!
+from datetime import datetime as dt
 import numpy as np
 from ginga import GingaPlugin, RGBImage, colors
 from ginga.gw import Widgets
@@ -56,16 +57,35 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         self.mfilesel = FileSelection(self.fv.w.root.get_widget())
         
         ## Define dimensions and angles relative to the pixels of the image
-        self.bar_angle = -0.22 * np.pi/180.
-        self.slit_angle = (4.0-0.22) * np.pi/180.
-        self.bar_width = -5.48 # mm (in same coordinate system as bar positions)
-        self.bar01xcenter = 269.0 # mm
-        self.bar01ycenter = 255.0 # mm
-        self.scale = 1./0.124
-        self.barposmatrix = np.array([ [self.scale*np.cos(self.bar_angle),
-                                        -np.sin(self.bar_angle)],
-                                       [np.sin(self.bar_angle),
-                                        self.scale*np.cos(self.bar_angle)] ])
+#         self.slit_angle = (4.00-0.22) * np.pi/180.
+        pixels = np.array([ (721, 2022), # pixels
+                            (1068, 1934),
+                            (984, 1804),
+                            (1112, 40),
+                          ])
+        physical = np.array([ (179.155, self.bar_to_slit(2)), # mm, slit number
+                              (133.901, self.bar_to_slit(6)),
+                              (144.962, self.bar_to_slit(12)),
+                              (129.033, self.bar_to_slit(92))
+                            ])
+        tick = dt.now()
+        self.fit_transforms(pixels, physical)
+        tock = dt.now()
+        elapsed = (tock-tick).total_seconds()
+        print('  Fitted transforms in {:.3f} s'.format(elapsed))
+
+        ## Determine bar center to center distance in pixels
+        ## 02, 145.472
+        ## 92, 129.480
+        physical = [ [145.472, self.bar_to_slit(2)],
+                     [129.480, self.bar_to_slit(92)] ]
+        pixels = self.physical_to_pixel(physical)
+        dx = pixels[1][0] - pixels[0][0]
+        dy = pixels[0][1] - pixels[1][1]
+        self.slit_angle_pix = np.arctan(dx/dy)
+        print("Slit Angle on CCD = {:.3f} deg".format(self.slit_angle_pix * 180./np.pi))
+        self.slit_height_pix = dy / (self.bar_to_slit(92) - self.bar_to_slit(2))
+        print("Slit Height on CCD = {:.3f} pix".format(self.slit_height_pix))
 
 
     def build_gui(self, container):
@@ -348,21 +368,58 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         This method should be provided and should return the lower case
         name of the plugin.
         """
-        return 'mylocalplugin'
+        return 'CSU Initializer Plugin'
 
 
     ## ------------------------------------------------------------------
-    ##  CSU Coordinate Conversions and Bar Numbering Utilities
+    ##  Coordinate Transformation Utilities
     ## ------------------------------------------------------------------
-
     def slit_to_bars(self, slit):
         return (slit*2-1, slit*2)
 
-    def barpos_to_pix(self, slit, mm):
-        barpos = np.array([self.bar01xcenter - mm, slit*self.bar_width + self.bar01ycenter])
-        xy = np.dot(barpos, self.barposmatrix)
-        return xy
+    def bar_to_slit(self, bar):
+        return int((bar+1)/2)
 
+    def pad(self, x):
+        return np.hstack([x, np.ones((x.shape[0], 1))])
+
+    def unpad(self, x):
+        return x[:,:-1]
+
+    def fit_transforms(self, pixels, physical):
+        assert pixels.shape[1] == 2
+        assert physical.shape[1] == 2
+        assert pixels.shape[0] == physical.shape[0]
+
+        # Pad the data with ones, so that our transformation can do translations too
+        n = pixels.shape[0]
+        pad = lambda x: np.hstack([x, np.ones((x.shape[0], 1))])
+        unpad = lambda x: x[:,:-1]
+        X = pad(pixels)
+        Y = pad(physical)
+
+        # Solve the least squares problem X * A = Y
+        # to find our transformation matrix A
+        A, res, rank, s = np.linalg.lstsq(X, Y)
+        Ainv, res, rank, s = np.linalg.lstsq(Y, X)
+        A[np.abs(A) < 1e-10] = 0
+        Ainv[np.abs(A) < 1e-10] = 0
+        self.Apixel_to_physical = A
+        self.Aphysical_to_pixel = Ainv
+
+    def pixel_to_physical(self, x):
+        x = np.array(x)
+        result = self.unpad(np.dot(self.pad(x), self.Apixel_to_physical))
+        return result
+
+    def physical_to_pixel(self, x):
+        x = np.array(x)
+        result =  self.unpad(np.dot(self.pad(x), self.Aphysical_to_pixel))
+        return result
+
+    ## ------------------------------------------------------------------
+    ##  Read Bar Positions and Overlay
+    ## ------------------------------------------------------------------
     def read_csu_bar_state(self, filename):
         with open(filename, 'r') as FO:
             lines = FO.readlines()
@@ -386,18 +443,24 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         draw_height = 0.45
         for j in range(1, 47):
             b1, b2 = self.slit_to_bars(j)
-            corners1 = [ self.barpos_to_pix(j-draw_height, 8),
-                         self.barpos_to_pix(j+draw_height, 8),
-                         self.barpos_to_pix(j+draw_height,
-                              bars[b1] + draw_height*self.bar_width*np.sin(self.slit_angle)),
-                         self.barpos_to_pix(j-draw_height,
-                              bars[b1] - draw_height*self.bar_width*np.sin(self.slit_angle)) ]
-            corners2 = [ self.barpos_to_pix(j-draw_height, 270.4+2.0),
-                         self.barpos_to_pix(j+draw_height, 270.4+2.0),
-                         self.barpos_to_pix(j+draw_height,
-                              bars[b2] + draw_height*self.bar_width*np.sin(self.slit_angle)),
-                         self.barpos_to_pix(j-draw_height,
-                              bars[b2] - draw_height*self.bar_width*np.sin(self.slit_angle)) ]
+
+            physical1 = [ [8.0, j-draw_height],
+                          [8.0, j+draw_height],
+                          [bars[b1], j+draw_height],
+                          [bars[b1], j-draw_height] ]
+            physical1 = np.array(physical1)
+            pixels1 = self.physical_to_pixel(physical1)
+            pixels1[2][0] += draw_height * self.slit_height_pix * np.sin(self.slit_angle_pix)
+            pixels1[3][0] -= draw_height * self.slit_height_pix * np.sin(self.slit_angle_pix)
+
+            physical2 = [ [270.4+2.0, j-draw_height],
+                          [270.4+2.0, j+draw_height],
+                          [bars[b2], j+draw_height],
+                          [bars[b2], j-draw_height] ]
+            physical2 = np.array(physical2)
+            pixels2 = self.physical_to_pixel(physical2)
+            pixels2[2][0] += draw_height * self.slit_height_pix * np.sin(self.slit_angle_pix)
+            pixels2[3][0] -= draw_height * self.slit_height_pix * np.sin(self.slit_angle_pix)
 
             try:
                 b1color = colormap[state[b1]]
@@ -408,18 +471,17 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
             except:
                 b2color = 'blue'
 
-            self.canvas.add(self.dc.Polygon(corners1, color=b1color))
-            self.canvas.add(self.dc.Polygon(corners2, color=b2color))
-            x1, y1 = self.barpos_to_pix(j+0.3, 14.0)
+            self.canvas.add(self.dc.Polygon(pixels1, color=b1color))
+            self.canvas.add(self.dc.Polygon(pixels2, color=b2color))
+            x1, y1 = self.physical_to_pixel([[14.0, j+0.3]])[0]
             self.canvas.add(self.dc.Text(x1, y1, '{:d}'.format(b1),
                                          fontsize=10, color='white'))
-            x2, y2 = self.barpos_to_pix(j+0.3, 270.4-2.0)
+            x2, y2 = self.physical_to_pixel([[270.4-2.0, j+0.3]])[0]
             self.canvas.add(self.dc.Text(x2, y2, '{:d}'.format(b2),
                                          fontsize=10, color='white'))
 
     def overlaybars_from_file(self):
         bars, state = self.read_csu_bar_state('/Users/jwalawender/MOSFIRE_Test_Data/20170414/csu_bar_state')
-        print(state)
         self.overlaybars(bars, state=state)
 
     def overlaybars_from_header(self):
@@ -430,7 +492,12 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         bars = self.read_bars_from_header(header)
         self.overlaybars(bars)
 
+    def clear_canvas(self):
+        self.canvas.delete_all_objects()
 
+    ## ------------------------------------------------------------------
+    ##  Button Callbacks
+    ## ------------------------------------------------------------------
     def set_bar_num_cb(self, w):
         bar_num = int(w.get_text())
         self.settings.set(bar_num=bar_num)
@@ -457,7 +524,5 @@ class CSU_initializer(GingaPlugin.LocalPlugin):
         self.mfilesel.popup('Load bar file', self.overlaybars,
                             initialdir='.', filename='txt files (*.txt)')
 
-    def clear_canvas(self):
-        self.canvas.delete_all_objects()
 
 
